@@ -1,0 +1,395 @@
+<div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a
+
+        href="https://esdoc.org/"
+
+    >esdoc (v0.5.2)</a>
+</h1>
+<h4>Good Documentation Generator For JavaScript</h4>
+<div class="apidocSectionDiv"><a
+    href="#apidoc.tableOfContents"
+    id="apidoc.tableOfContents"
+><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.esdoc">module esdoc</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.esdoc.default">
+            function <span class="apidocSignatureSpan">esdoc.</span>default
+            <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.esdoc.default">module esdoc.default</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.esdoc.default.default">
+            function <span class="apidocSignatureSpan">esdoc.</span>default
+            <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.esdoc" id="apidoc.module.esdoc">module esdoc</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.esdoc.default" id="apidoc.element.esdoc.default">
+        function <span class="apidocSignatureSpan">esdoc.</span>default
+        <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">class ESDoc {
+<span class="apidocCodeCommentSpan">  /**
+   * Generate documentation.
+   * @param {ESDocConfig} config - config for generation.
+   * @param {function(results: Object[], asts: Object[], config: ESDocConfig)} publisher - callback for output html.
+   */
+</span>  static generate(config, publisher) {
+    (0, _assert2.default)(typeof publisher === &#x27;function&#x27;);
+    (0, _assert2.default)(config.source);
+    (0, _assert2.default)(config.destination);
+
+    _Plugin2.default.init(config.plugins);
+    _Plugin2.default.onStart();
+    config = _Plugin2.default.onHandleConfig(config);
+
+    this._setDefaultConfig(config);
+    this._deprecatedConfig(config);
+
+    _colorLogger2.default.debug = !!config.debug;
+    const includes = config.includes.map(v =&#x3e; new RegExp(v));
+    const excludes = config.excludes.map(v =&#x3e; new RegExp(v));
+
+    let packageName = null;
+    let mainFilePath = null;
+    if (config.package) {
+      try {
+        const packageJSON = _fs2.default.readFileSync(config.package, { encode: &#x27;utf8&#x27; });
+        const packageConfig = JSON.parse(packageJSON);
+        packageName = packageConfig.name;
+        mainFilePath = packageConfig.main;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    let results = [];
+    const asts = [];
+    const sourceDirPath = _path2.default.resolve(config.source);
+
+    this._walk(config.source, filePath =&#x3e; {
+      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
+      let match = false;
+      for (const reg of includes) {
+        if (relativeFilePath.match(reg)) {
+          match = true;
+          break;
+        }
+      }
+      if (!match) return;
+
+      for (const reg of excludes) {
+        if (relativeFilePath.match(reg)) return;
+      }
+
+      console.log(`parse: ${ filePath }`);
+      const temp = this._traverse(config, config.source, filePath, packageName, mainFilePath);
+      if (!temp) return;
+      results.push(...temp.results);
+
+      asts.push({ filePath: `source${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
+    });
+
+    if (config.builtinExternal) {
+      this._useBuiltinExternal(config, results);
+    }
+
+    if (config.test) {
+      this._generateForTest(config, results, asts);
+    }
+
+    results = _Plugin2.default.onHandleTag(results);
+
+    try {
+      publisher(results, asts, config);
+    } catch (e) {
+      _InvalidCodeLogger2.default.showError(e);
+      process.exit(1);
+    }
+
+    _Plugin2.default.onComplete();
+  }
+
+  /**
+   * Generate document from test code.
+   * @param {ESDocConfig} config - config for generating.
+   * @param {DocObject[]} results - push DocObject to this.
+   * @param {AST[]} asts - push ast to this.
+   * @private
+   */
+  static _generateForTest(config, results, asts) {
+    const includes = config.test.includes.map(v =&#x3e; new RegExp(v));
+    const excludes = config.test.excludes.map(v =&#x3e; new RegExp(v));
+    const sourceDirPath = _path2.default.resolve(config.test.source);
+
+    this._walk(config.test.source, filePath =&#x3e; {
+      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
+      let match = false;
+      for (const reg of includes) {
+        if (relativeFilePath.match(reg)) {
+          match = true;
+          break;
+        }
+      }
+      if (!match) return;
+
+      for (const reg of excludes) {
+        if (relativeFilePath.match(reg)) return;
+      }
+
+      console.log(`parse: ${ filePath }`);
+      const temp = this._traverseForTest(config, config.test.type, config.test.source, filePath);
+      if (!temp) return;
+      results.push(...temp.results);
+
+      asts.push({ filePath: `test${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
+    });
+  }
+
+  /**
+   * set default config to specified config.
+   * @param {ESDocConfig} config - specified config.
+   * @private
+   */
+  static _setDefaultConfig(config) {
+    if (!config.includes) config.includes = [&#x27;\\.(js|es6)$&#x27;];
+
+    if (!config.excludes) config.excludes = [&#x27;\\.config\\.(js|es6)$&#x27;];
+
+    if (!config.access) config.access = [&#x27;public&#x27;, &#x27;protected&#x27;];
+
+    if (!(&#x27;autoPrivate&#x27; in config)) config.autoPrivate = true;
+
+    if (!(&#x27;unexportIdentifier&#x27; in config) ...</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.esdoc.default" id="apidoc.module.esdoc.default">module esdoc.default</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.esdoc.default.default" id="apidoc.element.esdoc.default.default">
+        function <span class="apidocSignatureSpan">esdoc.</span>default
+        <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">class ESDoc {
+<span class="apidocCodeCommentSpan">  /**
+   * Generate documentation.
+   * @param {ESDocConfig} config - config for generation.
+   * @param {function(results: Object[], asts: Object[], config: ESDocConfig)} publisher - callback for output html.
+   */
+</span>  static generate(config, publisher) {
+    (0, _assert2.default)(typeof publisher === &#x27;function&#x27;);
+    (0, _assert2.default)(config.source);
+    (0, _assert2.default)(config.destination);
+
+    _Plugin2.default.init(config.plugins);
+    _Plugin2.default.onStart();
+    config = _Plugin2.default.onHandleConfig(config);
+
+    this._setDefaultConfig(config);
+    this._deprecatedConfig(config);
+
+    _colorLogger2.default.debug = !!config.debug;
+    const includes = config.includes.map(v =&#x3e; new RegExp(v));
+    const excludes = config.excludes.map(v =&#x3e; new RegExp(v));
+
+    let packageName = null;
+    let mainFilePath = null;
+    if (config.package) {
+      try {
+        const packageJSON = _fs2.default.readFileSync(config.package, { encode: &#x27;utf8&#x27; });
+        const packageConfig = JSON.parse(packageJSON);
+        packageName = packageConfig.name;
+        mainFilePath = packageConfig.main;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    let results = [];
+    const asts = [];
+    const sourceDirPath = _path2.default.resolve(config.source);
+
+    this._walk(config.source, filePath =&#x3e; {
+      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
+      let match = false;
+      for (const reg of includes) {
+        if (relativeFilePath.match(reg)) {
+          match = true;
+          break;
+        }
+      }
+      if (!match) return;
+
+      for (const reg of excludes) {
+        if (relativeFilePath.match(reg)) return;
+      }
+
+      console.log(`parse: ${ filePath }`);
+      const temp = this._traverse(config, config.source, filePath, packageName, mainFilePath);
+      if (!temp) return;
+      results.push(...temp.results);
+
+      asts.push({ filePath: `source${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
+    });
+
+    if (config.builtinExternal) {
+      this._useBuiltinExternal(config, results);
+    }
+
+    if (config.test) {
+      this._generateForTest(config, results, asts);
+    }
+
+    results = _Plugin2.default.onHandleTag(results);
+
+    try {
+      publisher(results, asts, config);
+    } catch (e) {
+      _InvalidCodeLogger2.default.showError(e);
+      process.exit(1);
+    }
+
+    _Plugin2.default.onComplete();
+  }
+
+  /**
+   * Generate document from test code.
+   * @param {ESDocConfig} config - config for generating.
+   * @param {DocObject[]} results - push DocObject to this.
+   * @param {AST[]} asts - push ast to this.
+   * @private
+   */
+  static _generateForTest(config, results, asts) {
+    const includes = config.test.includes.map(v =&#x3e; new RegExp(v));
+    const excludes = config.test.excludes.map(v =&#x3e; new RegExp(v));
+    const sourceDirPath = _path2.default.resolve(config.test.source);
+
+    this._walk(config.test.source, filePath =&#x3e; {
+      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
+      let match = false;
+      for (const reg of includes) {
+        if (relativeFilePath.match(reg)) {
+          match = true;
+          break;
+        }
+      }
+      if (!match) return;
+
+      for (const reg of excludes) {
+        if (relativeFilePath.match(reg)) return;
+      }
+
+      console.log(`parse: ${ filePath }`);
+      const temp = this._traverseForTest(config, config.test.type, config.test.source, filePath);
+      if (!temp) return;
+      results.push(...temp.results);
+
+      asts.push({ filePath: `test${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
+    });
+  }
+
+  /**
+   * set default config to specified config.
+   * @param {ESDocConfig} config - specified config.
+   * @private
+   */
+  static _setDefaultConfig(config) {
+    if (!config.includes) config.includes = [&#x27;\\.(js|es6)$&#x27;];
+
+    if (!config.excludes) config.excludes = [&#x27;\\.config\\.(js|es6)$&#x27;];
+
+    if (!config.access) config.access = [&#x27;public&#x27;, &#x27;protected&#x27;];
+
+    if (!(&#x27;autoPrivate&#x27; in config)) config.autoPrivate = true;
+
+    if (!(&#x27;unexportIdentifier&#x27; in config) ...</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
