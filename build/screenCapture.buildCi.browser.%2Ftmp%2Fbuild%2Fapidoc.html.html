@@ -63,15 +63,21 @@
 
         </li>
 
+        <li>
+
+            <span class="apidocSignatureSpan">object <span class="apidocSignatureSpan">esdoc.</span>ESDocCLI</span>
+
+        </li>
+
     </ol></li>
 
-    <li class="apidocModuleLi"><a href="#apidoc.module.esdoc.default">module esdoc.default</a><ol>
+    <li class="apidocModuleLi"><a href="#apidoc.module.esdoc.ESDocCLI">module esdoc.ESDocCLI</a><ol>
 
         <li>
 
-            <a class="apidocElementLiA" href="#apidoc.element.esdoc.default.default">
-            function <span class="apidocSignatureSpan">esdoc.</span>default
-            <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+            <a class="apidocElementLiA" href="#apidoc.element.esdoc.ESDocCLI.default">
+            function <span class="apidocSignatureSpan">esdoc.ESDocCLI.</span>default
+            <span class="apidocSignatureSpan">(``process.argv``)</span>
             </a>
 
         </li>
@@ -228,152 +234,160 @@
     </ul>
 
 
+
+
 </div>
 
 <div class="apidocSectionDiv">
-<h1><a href="#apidoc.module.esdoc.default" id="apidoc.module.esdoc.default">module esdoc.default</a></h1>
+<h1><a href="#apidoc.module.esdoc.ESDocCLI" id="apidoc.module.esdoc.ESDocCLI">module esdoc.ESDocCLI</a></h1>
 
 
     <h2>
-        <a href="#apidoc.element.esdoc.default.default" id="apidoc.element.esdoc.default.default">
-        function <span class="apidocSignatureSpan">esdoc.</span>default
-        <span class="apidocSignatureSpan">(results: Object[], asts: Object[], config: ESDocConfig)</span>
+        <a href="#apidoc.element.esdoc.ESDocCLI.default" id="apidoc.element.esdoc.ESDocCLI.default">
+        function <span class="apidocSignatureSpan">esdoc.ESDocCLI.</span>default
+        <span class="apidocSignatureSpan">(``process.argv``)</span>
         </a>
     </h2>
     <ul>
-    <li>description and source-code<pre class="apidocCodePre">class ESDoc {
+    <li>description and source-code<pre class="apidocCodePre">class ESDocCLI {
 <span class="apidocCodeCommentSpan">  /**
-   * Generate documentation.
-   * @param {ESDocConfig} config - config for generation.
-   * @param {function(results: Object[], asts: Object[], config: ESDocConfig)} publisher - callback for output html.
+   * Create instance.
+   * @param {Object} argv - this is node.js argv(``process.argv``)
    */
-</span>  static generate(config, publisher) {
-    (0, _assert2.default)(typeof publisher === 'function');
-    (0, _assert2.default)(config.source);
-    (0, _assert2.default)(config.destination);
+</span>  constructor(argv) {
+    /** @type {ESDocCLIArgv} */
+    this._argv = (0, _minimist2.default)(argv.slice(2));
 
-    _Plugin2.default.init(config.plugins);
-    _Plugin2.default.onStart();
-    config = _Plugin2.default.onHandleConfig(config);
-
-    this._setDefaultConfig(config);
-    this._deprecatedConfig(config);
-
-    _colorLogger2.default.debug = !!config.debug;
-    const includes = config.includes.map(v =&gt; new RegExp(v));
-    const excludes = config.excludes.map(v =&gt; new RegExp(v));
-
-    let packageName = null;
-    let mainFilePath = null;
-    if (config.package) {
-      try {
-        const packageJSON = _fs2.default.readFileSync(config.package, { encode: 'utf8' });
-        const packageConfig = JSON.parse(packageJSON);
-        packageName = packageConfig.name;
-        mainFilePath = packageConfig.main;
-      } catch (e) {
-        // ignore
-      }
+    if (this._argv.h || this._argv.help) {
+      this._showHelp();
+      process.exit(0);
     }
 
-    let results = [];
-    const asts = [];
-    const sourceDirPath = _path2.default.resolve(config.source);
+    if (this._argv.v || this._argv.version) {
+      this._showVersion();
+      process.exit(0);
+    }
+  }
 
-    this._walk(config.source, filePath =&gt; {
-      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
-      let match = false;
-      for (const reg of includes) {
-        if (relativeFilePath.match(reg)) {
-          match = true;
-          break;
-        }
-      }
-      if (!match) return;
+  /**
+   * execute to generate document.
+   */
+  exec() {
+    let config;
 
-      for (const reg of excludes) {
-        if (relativeFilePath.match(reg)) return;
-      }
-
-      console.log(`parse: ${ filePath }`);
-      const temp = this._traverse(config, config.source, filePath, packageName, mainFilePath);
-      if (!temp) return;
-      results.push(...temp.results);
-
-      asts.push({ filePath: `source${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
-    });
-
-    if (config.builtinExternal) {
-      this._useBuiltinExternal(config, results);
+    const configPath = this._findConfigFilePath();
+    if (configPath) {
+      config = this._createConfigFromJSONFile(configPath);
+    } else {
+      config = this._createConfigFromPackageJSON();
     }
 
-    if (config.test) {
-      this._generateForTest(config, results, asts);
-    }
-
-    results = _Plugin2.default.onHandleTag(results);
-
-    try {
-      publisher(results, asts, config);
-    } catch (e) {
-      _InvalidCodeLogger2.default.showError(e);
+    if (config) {
+      _ESDoc2.default.generate(config, _publish2.default);
+    } else {
+      this._showHelp();
       process.exit(1);
     }
-
-    _Plugin2.default.onComplete();
   }
 
   /**
-   * Generate document from test code.
-   * @param {ESDocConfig} config - config for generating.
-   * @param {DocObject[]} results - push DocObject to this.
-   * @param {AST[]} asts - push ast to this.
+   * show help of ESDoc
    * @private
    */
-  static _generateForTest(config, results, asts) {
-    const includes = config.test.includes.map(v =&gt; new RegExp(v));
-    const excludes = config.test.excludes.map(v =&gt; new RegExp(v));
-    const sourceDirPath = _path2.default.resolve(config.test.source);
-
-    this._walk(config.test.source, filePath =&gt; {
-      const relativeFilePath = _path2.default.relative(sourceDirPath, filePath);
-      let match = false;
-      for (const reg of includes) {
-        if (relativeFilePath.match(reg)) {
-          match = true;
-          break;
-        }
-      }
-      if (!match) return;
-
-      for (const reg of excludes) {
-        if (relativeFilePath.match(reg)) return;
-      }
-
-      console.log(`parse: ${ filePath }`);
-      const temp = this._traverseForTest(config, config.test.type, config.test.source, filePath);
-      if (!temp) return;
-      results.push(...temp.results);
-
-      asts.push({ filePath: `test${ _path2.default.sep }${ relativeFilePath }`, ast: temp.ast });
-    });
+  _showHelp() {
+    console.log('Usage: esdoc [-c esdoc.json]');
+    console.log('');
+    console.log('Options:');
+    console.log('  -c', 'specify config file');
+    console.log('  -h', 'output usage information');
+    console.log('  -v', 'output the version number');
+    console.log('');
+    console.log('ESDoc finds configuration by the order:');
+    console.log('  1. `-c your-esdoc.json`');
+    console.log('  2. `.esdoc.json` in current directory');
+    console.log('  3. `.esdoc.js` in current directory');
+    console.log('  4. `esdoc` property in package.json');
   }
 
   /**
-   * set default config to specified config.
-   * @param {ESDocConfig} config - specified config.
+   * show version of ESDoc
    * @private
    */
-  static _setDefaultConfig(config) {
-    if (!config.includes) config.includes = ['\\.(js|es6)$'];
+  _showVersion() {
+    const packageObj = _NPMUtil2.default.findPackage();
+    if (packageObj) {
+      console.log(packageObj.version);
+    } else {
+      console.log('0.0.0');
+    }
+  }
 
-    if (!config.excludes) config.excludes = ['\\.config\\.(js|es6)$'];
+  /**
+   * find ESDoc config file.
+   * @returns {string|null} config file path.
+   * @private
+   */
+  _findConfigFilePath() {
+    if (this._argv.c) {
+      return this._argv.c;
+    }
 
-    if (!config.access) config.access = ['public', 'protected'];
+    try {
+      const filePath = _path2.default.resolve('./.esdoc.json');
+      _fs2.default.readFileSync(filePath);
+      return filePath;
+    } catch (e) {
+      // ignore
+    }
 
-    if (!('autoPrivate' in config)) config.autoPrivate = true;
+    try {
+      const filePath = _path2.default.resolve('./.esdoc.js');
+      _fs2.default.readFileSync(filePath);
+      return filePath;
+    } catch (e) {
+      // ignore
+    }
 
-    if (!('unexportIdentifier' in config) ...</pre></li>
+    return null;
+  }
+
+  /**
+   * create config object from config file.
+   * @param {string} configFilePath - config file path.
+   * @return {ESDocConfig} config object.
+   * @private
+   */
+  _createConfigFromJSONFile(configFilePath) {
+    configFilePath = _path2.default.resolve(configFilePath);
+    const ext = _path2.default.extname(configFilePath);
+    if (ext === '.js') {
+      /* eslint-disable global-require */
+      return require(configFilePath);
+    } else {
+      const configJSON = _fs2.default.readFileSync(configFilePath, { encode: 'utf8' });
+      const config = JSON.parse(configJSON);
+      return config;
+    }
+  }
+
+  /**
+   * create config object from package.json.
+   * @return {ESDocConfig|null} config object.
+   * @private
+   */
+  _createConfigFromPackageJSON() {
+    try {
+      const filePath = _path2.default.resolve('./package.json');
+      const packageJSON = _fs2.default.readFileSync(filePath, 'utf8').toString();
+      const packageObj = JSON.parse(packageJSON);
+      return packageObj.esdoc;
+    } catch (e) {
+      // ignore
+    }
+
+    return null;
+  }
+}</pre></li>
     <li>example usage<pre class="apidocCodePre">n/a</pre></li>
     </ul>
 
